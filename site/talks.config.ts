@@ -21,6 +21,14 @@ export interface Talk {
 
 export const talks: Talk[] = [
   {
+    slug: 'debate-slide',
+    title: '辩论赛决赛',
+    date: '2025-12-17',
+    description:
+      'URL 可传参的辩论赛流程模板:?title=...&subtitle=...&motion=...&proTeam=...&conTeam=...',
+    tags: ['debate', 'template'],
+  },
+  {
     slug: 'hello-deck',
     title: 'Hello Deck',
     date: '2026-01-01',

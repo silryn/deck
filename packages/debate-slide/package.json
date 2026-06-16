@@ -1,0 +1,11 @@
+{
+  "name": "debate-slide",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "slidev --open --remote",
+    "build": "slidev build",
+    "build-base": "slidev build --out ../../dist/debate-slide --base /debate-slide/",
+    "export": "slidev export --with-clicks --per-slide --wait-until none"
+  }
+}
