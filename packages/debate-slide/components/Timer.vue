@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { createSyncState } from '@slidev/client'
 
 const props = defineProps<{
@@ -14,53 +14,85 @@ const emit = defineEmits<{
   stop: []
 }>()
 
-const { state: syncState, init: initSync } = createSyncState(
-  { timeLeft: props.duration, isRunning: props.autoStart || false, hasWarned: false },
-  { timeLeft: props.duration, isRunning: props.autoStart || false, hasWarned: false }
-)
+// Timer state is wall-clock based, not tick-mutated. We sync:
+//   - endsAt: absolute ms timestamp when timer hits 0 (only valid while running)
+//   - pausedRemaining: seconds left at the moment we paused
+//   - isRunning, hasWarned
+// Every window derives the visible countdown from `endsAt - Date.now()`, so
+// any number of windows can be open without compounding the tick rate, and
+// the presenter/audience distinction goes away entirely.
+const initial = {
+  isRunning: false,
+  endsAt: 0,
+  pausedRemaining: props.duration,
+  hasWarned: false,
+}
+const { state: syncState, init: initSync } = createSyncState({ ...initial }, { ...initial })
 initSync(`timer-${props.label}`)
 
-const isPresenter = window.location.hash.startsWith('#/presenter/')
+const now = ref(Date.now())
+let tickId: number | null = null
 
-watch(() => syncState.isRunning, (running) => {
-  if (running && !intervalId.value && isPresenter) {
-    intervalId.value = window.setInterval(() => {
-      if (syncState.timeLeft > 0) {
-        syncState.timeLeft--
-        if (syncState.timeLeft === 30 && !syncState.hasWarned) {
-          syncState.hasWarned = true
-          playWarningSound()
-        }
-      } else {
-        stop()
-        playWarningSound()
-        setTimeout(() => playWarningSound(), 300)
-      }
-    }, 1000)
-  } else if (!running && intervalId.value) {
-    clearInterval(intervalId.value)
-    intervalId.value = null
+function stopTick() {
+  if (tickId !== null) {
+    clearInterval(tickId)
+    tickId = null
+  }
+}
+
+function startTick() {
+  if (tickId !== null) return
+  now.value = Date.now()
+  tickId = window.setInterval(() => {
+    now.value = Date.now()
+  }, 250)
+}
+
+const timeLeft = computed(() => {
+  if (syncState.isRunning)
+    return Math.max(0, Math.ceil((syncState.endsAt - now.value) / 1000))
+  return syncState.pausedRemaining
+})
+
+watch(
+  () => syncState.isRunning,
+  (running) => {
+    if (running) startTick()
+    else stopTick()
+  },
+  { immediate: true },
+)
+
+// Drive the warning + auto-stop off the derived `timeLeft`, not the interval.
+// Both fire on every window, but state mutations are idempotent and the
+// `hasWarned` flag in sync state keeps the 30s beep from playing twice.
+watch(timeLeft, (v, prev) => {
+  if (!syncState.isRunning) return
+  if (v <= 30 && v > 0 && !syncState.hasWarned) {
+    syncState.hasWarned = true
+    playWarningSound()
+  }
+  if (v === 0 && prev !== 0) {
+    syncState.isRunning = false
+    syncState.pausedRemaining = 0
+    emit('stop')
+    playWarningSound()
+    setTimeout(() => playWarningSound(), 300)
   }
 })
 
-const timeLeft = computed({
-  get: () => syncState.timeLeft,
-  set: (val) => { syncState.timeLeft = val }
+onMounted(() => {
+  if (props.autoStart && !syncState.isRunning && syncState.pausedRemaining > 0)
+    start()
 })
-const isRunning = computed({
-  get: () => syncState.isRunning,
-  set: (val) => { syncState.isRunning = val }
-})
-const hasWarned = computed({
-  get: () => syncState.hasWarned,
-  set: (val) => { syncState.hasWarned = val }
-})
-const intervalId = ref<number | null>(null)
+
+onUnmounted(stopTick)
 
 const minutes = computed(() => Math.floor(timeLeft.value / 60))
 const seconds = computed(() => timeLeft.value % 60)
 const progress = computed(() => (timeLeft.value / props.duration) * 100)
 const isWarning = computed(() => timeLeft.value <= 30 && timeLeft.value > 0)
+const isRunning = computed(() => syncState.isRunning)
 
 const colorClass = computed(() => {
   if (isWarning.value) return 'text-yellow-400 border-yellow-400 animate-pulse'
@@ -75,25 +107,31 @@ function playWarningSound() {
 }
 
 function start() {
-  if (syncState.isRunning) return
+  if (syncState.isRunning || syncState.pausedRemaining <= 0) return
+  syncState.endsAt = Date.now() + syncState.pausedRemaining * 1000
   syncState.isRunning = true
   emit('start')
 }
 
 function stop() {
+  if (!syncState.isRunning) return
+  syncState.pausedRemaining = Math.max(0, Math.ceil((syncState.endsAt - Date.now()) / 1000))
   syncState.isRunning = false
   emit('stop')
 }
 
 function reset() {
-  stop()
-  syncState.timeLeft = props.duration
+  syncState.isRunning = false
+  syncState.endsAt = 0
+  syncState.pausedRemaining = props.duration
   syncState.hasWarned = false
+  emit('stop')
 }
 
 watch(() => props.duration, (newDuration) => {
-  syncState.timeLeft = newDuration
-  stop()
+  syncState.isRunning = false
+  syncState.endsAt = 0
+  syncState.pausedRemaining = newDuration
   syncState.hasWarned = false
 })
 

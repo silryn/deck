@@ -1,12 +1,13 @@
-import { execSync } from 'node:child_process'
+import { type ChildProcess, execSync, spawn } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
+import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import vue from '@vitejs/plugin-vue'
 import sirv from 'sirv'
 import unocss from 'unocss/vite'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin, type ProxyOptions } from 'vite'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
@@ -33,144 +34,233 @@ const buildInfo = {
   ci: !!process.env.GITHUB_ACTIONS,
 }
 
-function knownSlugs() {
-  if (!existsSync(packagesRoot)) return new Set<string>()
-  return new Set(
-    readdirSync(packagesRoot, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .map(d => d.name),
-  )
-}
-
-function notBuiltPage(slug: string): string {
-  return `<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>${slug} · not built</title>
-<style>
-  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; max-width: 38rem; margin: 4rem auto; padding: 0 1.25rem; color: #18181b; background: #fafaf9; }
-  @media (prefers-color-scheme: dark) { body { background: #0a0a0a; color: #fafafa; } pre { background: #18181b !important; } }
-  h1 { font-size: 1.25rem; margin: 0 0 1rem; }
-  p { color: #71717a; line-height: 1.6; }
-  pre { background: #f4f4f5; padding: .9rem 1rem; border-radius: 8px; font: .85rem/1.45 ui-monospace, monospace; overflow-x: auto; }
-  a { color: inherit; }
-</style></head>
-<body>
-  <h1>${slug} hasn't been built yet</h1>
-  <p>This dev server serves built talks from <code>dist/</code>. Build them once, then refresh:</p>
-  <pre>bun run build:talks</pre>
-  <p>Or develop this talk directly in Slidev (separate port, with HMR):</p>
-  <pre>cd packages/${slug}\nbun run dev</pre>
-  <p><a href="/">← back to index</a></p>
-</body>
-</html>`
+function knownSlugs(): string[] {
+  if (!existsSync(packagesRoot)) return []
+  return readdirSync(packagesRoot, { withFileTypes: true })
+    .filter(d => d.isDirectory() && existsSync(path.join(packagesRoot, d.name, 'slides.md')))
+    .map(d => d.name)
+    .sort()
 }
 
 function looksLikeAsset(p: string) {
   return /\.[a-z0-9]+$/i.test(p)
 }
 
-function talkRouter() {
-  const slugs = knownSlugs()
-  // Per-talk sirv handlers. Don't use sirv's `single` mode — it serves
-  // index.html for ANY missing path, which would corrupt MIME for missing
-  // asset paths (e.g. .png that doesn't exist). We do SPA fallback ourselves,
-  // only for paths without a file extension.
+// Ask the OS for a free TCP port. We bind to 0 on 127.0.0.1, read back the
+// assigned port, and immediately close. There's a small race window between
+// release and slidev's own bind, but in practice we've never lost it.
+function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer()
+    srv.unref()
+    srv.once('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address()
+      if (addr && typeof addr === 'object') {
+        const { port } = addr
+        srv.close(() => resolve(port))
+      }
+      else {
+        srv.close()
+        reject(new Error('failed to allocate a free port'))
+      }
+    })
+  })
+}
+
+// Per-talk static handler for build/preview mode. In dev we proxy to slidev
+// instead, but this is still useful for `vite preview` after `bun run build`.
+function talkRouter(): Plugin {
+  const slugs = new Set(knownSlugs())
   const distServe = new Map<string, ReturnType<typeof sirv>>()
   const publicServe = new Map<string, ReturnType<typeof sirv>>()
   for (const slug of slugs) {
     const distDir = path.join(distRoot, slug)
-    if (existsSync(distDir)) {
+    if (existsSync(distDir))
       distServe.set(slug, sirv(distDir, { dev: true, etag: true }))
-    }
     const publicDir = path.join(packagesRoot, slug, 'public')
-    if (existsSync(publicDir)) {
+    if (existsSync(publicDir))
       publicServe.set(slug, sirv(publicDir, { dev: true, etag: true }))
-    }
   }
 
   return {
     name: 'deck-talk-router',
-    configureServer(server: any) {
-      // Register synchronously (not via `return () => ...`) so this runs
-      // BEFORE vite's built-in SPA index/fs.allow middlewares. We need to
-      // claim /<slug>/... before they answer.
-      server.middlewares.use((req: any, res: any, next: any) => {
-          const url = (req.url || '').split('?')[0]
-          const m = url.match(/^\/([^/]+)(?:\/(.*))?$/)
-          if (!m) return next()
-          const [, slug, rest = ''] = m
-          if (!slugs.has(slug)) return next()
+    // Skip in dev — the spawner+proxy plugin owns /<slug>/* there.
+    apply(_config, env) {
+      return env.command === 'build' || !!env.isPreview
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = (req.url || '').split('?')[0]
+        const m = url.match(/^\/([^/]+)(?:\/(.*))?$/)
+        if (!m) return next()
+        const [, slug, rest = ''] = m
+        if (!slugs.has(slug)) return next()
 
-          const origUrl = req.url
-          // Strip /<slug> prefix so sirv sees /<rest>[?query] under the talk root.
-          const innerUrl = `/${rest}${origUrl.slice(url.length)}`
+        const origUrl = req.url!
+        const innerUrl = `/${rest}${origUrl.slice(url.length)}`
 
-          const spaFallbackOr404 = () => {
-            req.url = origUrl
-            const dist = distServe.get(slug)
-            if (dist && !looksLikeAsset(rest || 'index.html')) {
-              // SPA route: serve the talk's index.html (matches the
-              // `_redirects: /<slug>/* -> /<slug>/index.html 200` rule
-              // Slidev writes for Netlify / Cloudflare Pages).
-              req.url = '/index.html'
-              dist(req, res, () => {
-                req.url = origUrl
-                res.statusCode = 404
-                res.setHeader('Content-Type', 'text/plain; charset=utf-8')
-                res.end(`Not found: ${origUrl}`)
-              })
-              return
-            }
-            if (!dist) {
-              res.statusCode = 503
-              res.setHeader('Content-Type', 'text/html; charset=utf-8')
-              res.end(notBuiltPage(slug))
-              return
-            }
-            res.statusCode = 404
-            res.setHeader('Content-Type', 'text/plain; charset=utf-8')
-            res.end(`Not found: ${origUrl}`)
-          }
-
-          const tryPublic = () => {
-            const pub = publicServe.get(slug)
-            if (!pub) return spaFallbackOr404()
-            req.url = innerUrl
-            pub(req, res, () => {
-              spaFallbackOr404()
-            })
-          }
-
+        const fallback = () => {
+          req.url = origUrl
           const dist = distServe.get(slug)
-          if (dist) {
-            req.url = innerUrl
+          if (dist && !looksLikeAsset(rest || 'index.html')) {
+            req.url = '/index.html'
             dist(req, res, () => {
-              tryPublic()
+              req.url = origUrl
+              res.statusCode = 404
+              res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+              res.end(`Not found: ${origUrl}`)
             })
+            return
           }
-          else {
-            tryPublic()
-          }
-        })
+          res.statusCode = 404
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+          res.end(`Not found: ${origUrl}`)
+        }
+
+        const tryPublic = () => {
+          const pub = publicServe.get(slug)
+          if (!pub) return fallback()
+          req.url = innerUrl
+          pub(req, res, fallback)
+        }
+
+        const dist = distServe.get(slug)
+        if (dist) {
+          req.url = innerUrl
+          dist(req, res, tryPublic)
+        }
+        else {
+          tryPublic()
+        }
+      })
     },
   }
 }
 
-export default defineConfig({
-  root: here,
-  plugins: [vue(), unocss({ configFile: path.resolve(here, 'uno.config.ts') }), talkRouter()],
-  define: {
-    __BUILD_INFO__: JSON.stringify(buildInfo),
-  },
-  server: {
-    fs: {
-      allow: [here, packagesRoot, distRoot],
+// Spawn `slidev --base /<slug>/ --port <port>` per talk, then proxy
+// `/<slug>/*` to that port (HMR websockets included). Children are killed
+// on server close / SIGINT / SIGTERM / process exit so we don't leak ports.
+function slidevDevSpawner(ports: Map<string, number>): Plugin {
+  const children: ChildProcess[] = []
+  let killed = false
+
+  function killAll() {
+    if (killed) return
+    killed = true
+    for (const c of children) {
+      if (!c.killed) {
+        try {
+          c.kill('SIGTERM')
+        }
+        catch {}
+      }
+    }
+  }
+
+  return {
+    name: 'deck-slidev-spawner',
+    // `apply: 'serve'` covers both `vite dev` and `vite preview`. We don't
+    // want to spawn slidev for preview (that mode serves built output), so
+    // the caller passes an empty `ports` map for preview and we no-op below.
+    apply: 'serve',
+    configureServer(server) {
+      if (ports.size === 0) return
+
+      for (const [slug, port] of ports) {
+        const cwd = path.join(packagesRoot, slug)
+        // stdio[0] = 'pipe' is load-bearing: slidev calls
+        // `process.stdin.resume()` to listen for shortcut keys, but if stdin
+        // is `'ignore'` it gets /dev/null which EOFs immediately and slidev
+        // exits right after printing its ready banner. A pipe stays open
+        // until we explicitly end it (we never do), so slidev keeps running.
+        const child = spawn(
+          'bun',
+          ['x', 'slidev', '--base', `/${slug}/`, '--port', String(port)],
+          {
+            cwd,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: { ...process.env, FORCE_COLOR: '1' },
+          },
+        )
+        children.push(child)
+
+        // Prefix each line so simultaneously-spawning talks stay readable.
+        const tag = `\x1b[36m[${slug}]\x1b[0m `
+        const prefix = (stream: NodeJS.ReadableStream, sink: NodeJS.WritableStream) => {
+          let buf = ''
+          stream.on('data', (chunk: Buffer) => {
+            buf += chunk.toString()
+            const lines = buf.split('\n')
+            buf = lines.pop() ?? ''
+            for (const line of lines) sink.write(`${tag}${line}\n`)
+          })
+        }
+        if (child.stdout) prefix(child.stdout, process.stdout)
+        if (child.stderr) prefix(child.stderr, process.stderr)
+
+        child.on('exit', (code, signal) => {
+          if (!killed && code !== 0 && code !== null) {
+            // eslint-disable-next-line no-console
+            console.error(`${tag}slidev exited with code ${code} (signal ${signal})`)
+          }
+        })
+      }
+
+      server.httpServer?.once('close', killAll)
+      process.once('SIGINT', () => { killAll(); process.exit(130) })
+      process.once('SIGTERM', () => { killAll(); process.exit(143) })
+      process.once('exit', killAll)
     },
-  },
-  build: {
-    outDir: path.resolve(here, '../dist'),
-    // Don't wipe sibling dist/<slug>/ folders produced by talk builds.
-    // The top-level `build` script clears dist once via `cleanup:dist`.
-    emptyOutDir: false,
-  },
+  }
+}
+
+export default defineConfig(async ({ command, isPreview }) => {
+  const slugs = knownSlugs()
+  const isDev = command === 'serve' && !isPreview
+
+  const proxy: Record<string, ProxyOptions> = {}
+  const ports = new Map<string, number>()
+
+  if (isDev) {
+    for (const slug of slugs)
+      ports.set(slug, await findFreePort())
+    for (const [slug, port] of ports) {
+      // Matches /<slug> exactly and /<slug>/anything (including the HMR
+      // websocket upgrade path). `ws: true` makes vite forward the upgrade.
+      // `localhost` (not 127.0.0.1) is intentional: slidev's vite resolves
+      // its host to whatever Node's DNS picks for "localhost" — on modern
+      // Linux that's `::1`, so an IPv4-only target won't reach it.
+      proxy[`^/${slug}(?:/.*)?$`] = {
+        target: `http://localhost:${port}`,
+        ws: true,
+        changeOrigin: false,
+      }
+    }
+  }
+
+  return {
+    root: here,
+    plugins: [
+      vue(),
+      unocss({ configFile: path.resolve(here, 'uno.config.ts') }),
+      talkRouter(),
+      slidevDevSpawner(ports),
+    ],
+    define: {
+      __BUILD_INFO__: JSON.stringify(buildInfo),
+    },
+    server: {
+      proxy,
+      fs: {
+        allow: [here, packagesRoot, distRoot],
+      },
+    },
+    build: {
+      outDir: path.resolve(here, '../dist'),
+      // Don't wipe sibling dist/<slug>/ folders produced by talk builds.
+      // The top-level `build` script clears dist once via `cleanup:dist`.
+      emptyOutDir: false,
+    },
+  }
 })
