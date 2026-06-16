@@ -3,3 +3,8 @@
 .DS_Store
 
 dist/
+
+# Slidev's dev server writes a temporary index.html into each talk package
+# (with an absolute /@fs/... script path that leaks the local user's home
+# directory). It's only used at dev time — production output goes to dist/.
+packages/*/index.html
