@@ -84,7 +84,7 @@ function gradientFor(slug: string) {
       >
         <div
           class="relative aspect-video overflow-hidden"
-          :style="!talk.cover ? { background: gradientFor(talk.slug) } : undefined"
+          :style="{ background: gradientFor(talk.slug) }"
         >
           <img
             v-if="talk.cover"
@@ -93,11 +93,18 @@ function gradientFor(slug: string) {
             loading="lazy"
             class="h-full w-full object-cover transition duration-500 group-hover:scale-105"
           >
-          <div
+          <iframe
             v-else
-            class="absolute inset-0 flex items-end p-5 text-white"
-          >
-            <span class="font-mono text-xs uppercase tracking-widest opacity-80">
+            :src="`/${talk.slug}/`"
+            :title="`${talk.title} — first slide`"
+            loading="lazy"
+            scrolling="no"
+            tabindex="-1"
+            aria-hidden="true"
+            class="absolute inset-0 h-full w-full pointer-events-none border-0 bg-black transition duration-500 group-hover:scale-105"
+          />
+          <div class="absolute bottom-0 left-0 p-3">
+            <span class="rounded bg-black/40 px-2 py-0.5 font-mono text-[11px] uppercase tracking-widest text-white/90 backdrop-blur">
               {{ year(talk.date) }}
             </span>
           </div>

@@ -113,7 +113,7 @@ Add an entry to `site/talks.config.ts`. The `Talk` interface at the top of that 
 }
 ```
 
-If you set `cover`, drop the image into `packages/<your-slug>/public/`. Vite middleware serves it during `bun run dev`, and the production build copies it into `dist/<your-slug>/`. Leave `cover` undefined to get a generated gradient placeholder.
+If you set `cover`, drop the image into `packages/<your-slug>/public/`. Vite middleware serves it during `bun run dev`, and the production build copies it into `dist/<your-slug>/`. Leave `cover` undefined to get a **live first-slide preview** — the landing page embeds the built deck's home as the cover (with a gradient placeholder underneath while it loads, or if the talk hasn't been built yet).
 
 ### 4. Write the deck
 
