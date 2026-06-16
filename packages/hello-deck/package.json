@@ -1,0 +1,11 @@
+{
+  "name": "hello-deck",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "slidev --open --remote",
+    "build": "slidev build",
+    "build-base": "slidev build --out ../../dist/hello-deck --base /hello-deck/",
+    "export": "slidev export --with-clicks --per-slide --wait-until none"
+  }
+}

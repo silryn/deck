@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": [
+      "vite/client",
+      "node",
+      "@slidev/types"
+    ],
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": [
+    "**/packages/**/*.ts",
+    "**/packages/**/*.vue",
+    "**/packages/**/*.mts"
+  ],
+  "exclude": [
+    "**/*.md"
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "name": "deck",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "cleanup:dist": "rimraf --glob dist",
+    "dev": "vite --config site/vite.config.ts",
+    "build:site": "vite build --config site/vite.config.ts",
+    "build:talks": "bun --filter='./packages/*' run build-base",
+    "build": "bun run cleanup:dist && bun run build:site && bun run build:talks"
+  },
+  "trustedDependencies": [
+    "esbuild"
+  ],
+  "devDependencies": {
+    "@iconify-json/bi": "^1.2.6",
+    "@iconify-json/carbon": "^1.2.14",
+    "@iconify-json/devicon": "^1.2.45",
+    "@iconify-json/fluent": "^1.2.33",
+    "@iconify-json/logos": "^1.2.9",
+    "@iconify-json/ri": "^1.2.6",
+    "@iconify-json/simple-icons": "^1.2.55",
+    "@slidev/cli": "~52.13.0",
+    "@slidev/client": "~52.13.0",
+    "@slidev/theme-default": "latest",
+    "@slidev/theme-seriph": "latest",
+    "@slidev/types": "~52.13.0",
+    "@types/node": "^22.18.12",
+    "@types/seedrandom": "^3.0.8",
+    "@unocss/preset-attributify": "^66.5.4",
+    "@unocss/preset-icons": "^66.5.4",
+    "@unocss/preset-web-fonts": "^66.5.4",
+    "@unocss/reset": "^66.5.4",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "rimraf": "^6.0.1",
+    "seedrandom": "^3.0.5",
+    "sirv": "^3.0.2",
+    "typescript": "^5.9.3",
+    "unocss": "^66.5.4",
+    "vite": "^6.4.1",
+    "vue": "^3.5.22"
+  }
+}
