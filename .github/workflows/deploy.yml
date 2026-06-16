@@ -1,0 +1,59 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_PAGES_ACCOUNT }}
+      CLOUDFLARE_PAGES_NAME: ${{ vars.CLOUDFLARE_PAGES_NAME }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build
+        run: bun run build
+        # GITHUB_SHA / GITHUB_REF_NAME / GITHUB_RUN_ID / GITHUB_REPOSITORY are
+        # auto-injected by Actions; site/vite.config.ts reads them and bakes
+        # them into the bundle via `define: { __BUILD_INFO__ }`, which the
+        # landing-page footer in site/src/App.vue renders.
+
+      - name: Deploy or create project if missing
+        run: |
+          echo "Attempting to deploy to Cloudflare Pages..."
+          set +e
+          bunx wrangler pages deploy dist --project-name="$CLOUDFLARE_PAGES_NAME" --commit-dirty=true
+          DEPLOY_STATUS=$?
+          set -e
+
+          if [ $DEPLOY_STATUS -ne 0 ]; then
+            echo "Deployment failed, attempting to create project and redeploy..."
+            # Create Project
+            bunx wrangler pages project create "$CLOUDFLARE_PAGES_NAME" --production-branch=main || echo "Project creation may already exist."
+            # Deploy Again
+            bunx wrangler pages deploy dist --project-name="$CLOUDFLARE_PAGES_NAME"
+          else
+            echo "Deployment succeeded, skipping project creation."
+          fi

@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +12,26 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
 const packagesRoot = path.join(root, 'packages')
 const distRoot = path.join(root, 'dist')
+
+function git(cmd: string, fallback: string) {
+  try {
+    return execSync(`git ${cmd}`, { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+  }
+  catch {
+    return fallback
+  }
+}
+
+// Resolved once at vite startup. In CI, GitHub's default env vars take
+// precedence; locally, we fall back to `git` and treat the build as "dev".
+const buildInfo = {
+  commit: (process.env.GITHUB_SHA || git('rev-parse HEAD', '')).slice(0, 7) || 'dev',
+  branch: process.env.GITHUB_REF_NAME || git('rev-parse --abbrev-ref HEAD', 'local'),
+  buildTime: new Date().toISOString(),
+  runId: process.env.GITHUB_RUN_ID || null,
+  repo: process.env.GITHUB_REPOSITORY || null,
+  ci: !!process.env.GITHUB_ACTIONS,
+}
 
 function knownSlugs() {
   if (!existsSync(packagesRoot)) return new Set<string>()
@@ -138,6 +159,9 @@ function talkRouter() {
 export default defineConfig({
   root: here,
   plugins: [vue(), unocss({ configFile: path.resolve(here, 'uno.config.ts') }), talkRouter()],
+  define: {
+    __BUILD_INFO__: JSON.stringify(buildInfo),
+  },
   server: {
     fs: {
       allow: [here, packagesRoot, distRoot],

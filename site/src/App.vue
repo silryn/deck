@@ -3,6 +3,37 @@ import { computed, ref } from 'vue'
 
 import { talks } from '../talks.config'
 
+declare const __BUILD_INFO__: {
+  commit: string
+  branch: string
+  buildTime: string
+  runId: string | null
+  repo: string | null
+  ci: boolean
+}
+
+const build = __BUILD_INFO__
+
+const commitUrl = computed(() =>
+  build.repo && build.commit !== 'dev'
+    ? `https://github.com/${build.repo}/commit/${build.commit}`
+    : null,
+)
+const runUrl = computed(() =>
+  build.repo && build.runId
+    ? `https://github.com/${build.repo}/actions/runs/${build.runId}`
+    : null,
+)
+const buildTimeLabel = computed(() => {
+  const d = new Date(build.buildTime)
+  if (Number.isNaN(d.getTime())) return build.buildTime
+  return d.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+    timeZoneName: 'short',
+  })
+})
+
 const sorted = [...talks].sort((a, b) => b.date.localeCompare(a.date))
 
 const allTags = computed(() => {
@@ -148,5 +179,49 @@ function gradientFor(slug: string) {
     >
       No talks under #{{ activeTag }}.
     </p>
+
+    <footer class="mt-16 border-t border-[var(--border)] pt-5 font-mono text-[11px] text-[var(--muted)]">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>
+          <span class="opacity-60">commit</span>
+          <a
+            v-if="commitUrl"
+            :href="commitUrl"
+            target="_blank"
+            rel="noopener"
+            class="ml-1 underline-offset-2 hover:underline"
+          >{{ build.commit }}</a>
+          <span v-else class="ml-1">{{ build.commit }}</span>
+        </span>
+        <span class="opacity-40">·</span>
+        <span>
+          <span class="opacity-60">branch</span>
+          <span class="ml-1">{{ build.branch }}</span>
+        </span>
+        <span class="opacity-40">·</span>
+        <span>
+          <span class="opacity-60">built</span>
+          <span class="ml-1">{{ buildTimeLabel }}</span>
+        </span>
+        <template v-if="runUrl">
+          <span class="opacity-40">·</span>
+          <a
+            :href="runUrl"
+            target="_blank"
+            rel="noopener"
+            class="underline-offset-2 hover:underline"
+          >
+            <span class="opacity-60">run</span>
+            <span class="ml-1">#{{ build.runId }}</span>
+          </a>
+        </template>
+        <span
+          v-if="!build.ci"
+          class="ml-auto rounded bg-[var(--border)]/50 px-1.5 py-0.5 text-[10px] uppercase tracking-widest opacity-70"
+        >
+          local
+        </span>
+      </div>
+    </footer>
   </main>
 </template>
