@@ -66,13 +66,22 @@ function fmtDate(date: string) {
 // Talks that share a first tag share an accent — so a series of "debate"
 // talks all look like one family. Falls back to the slug when no tags are set,
 // which keeps the gradient stable per-card.
-function gradientFor(talk: Talk) {
+function hueFor(talk: Talk) {
   const key = talk.tags?.[0] ?? talk.slug
   let hash = 0
   for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0
-  const h1 = hash % 360
+  return hash % 360
+}
+
+function gradientFor(talk: Talk) {
+  const h1 = hueFor(talk)
   const h2 = (h1 + 60) % 360
   return `linear-gradient(135deg, hsl(${h1} 70% 60%) 0%, hsl(${h2} 70% 45%) 100%)`
+}
+
+// Accent color for the hover glow — same hue family as the card gradient.
+function glowFor(talk: Talk) {
+  return `hsl(${hueFor(talk)} 75% 55%)`
 }
 
 // Mount the live first-slide iframe only for cards within (or near) the
@@ -162,13 +171,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="mx-auto max-w-6xl px-6 py-12">
+  <div class="aurora" aria-hidden="true"><span /></div>
+
+  <main class="relative mx-auto max-w-6xl px-6 py-12">
     <header class="mb-10">
-      <h1 class="text-3xl font-semibold tracking-tight">
+      <h1 class="hero-title inline-block text-4xl font-semibold tracking-tight sm:text-5xl">
         Silryn's Deck
       </h1>
-      <p class="mt-2 text-sm text-[var(--muted)]">
-        My slidev talks.
+      <p class="mt-3 flex items-center gap-2 text-sm text-[var(--muted)]">
+        <span class="live-dot" aria-hidden="true" />
+        <span>{{ sorted.length }} talks · my slidev decks, always evolving.</span>
       </p>
     </header>
 
@@ -198,11 +210,12 @@ onUnmounted(() => {
 
     <ul class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
       <li
-        v-for="talk in displayed"
+        v-for="(talk, idx) in displayed"
         :key="talk.slug"
         :ref="(el) => observeCard(el as Element | null, talk.slug)"
         :data-slug="talk.slug"
-        class="group cursor-pointer overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] transition hover:-translate-y-1 hover:shadow-xl"
+        :style="{ '--i': idx % 12, '--glow': glowFor(talk) }"
+        class="talk-card card-enter group cursor-pointer overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] hover:-translate-y-1"
         @click="open(talk.slug)"
       >
         <div

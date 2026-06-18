@@ -6,6 +6,9 @@
   --card: #ffffff;
   --border: #e4e4e7;
   --accent: #0ea5e9;
+  --aurora-1: rgba(14, 165, 233, 0.22);
+  --aurora-2: rgba(168, 85, 247, 0.18);
+  --aurora-3: rgba(244, 114, 182, 0.16);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -16,6 +19,9 @@
     --card: #18181b;
     --border: #27272a;
     --accent: #38bdf8;
+    --aurora-1: rgba(56, 189, 248, 0.18);
+    --aurora-2: rgba(168, 85, 247, 0.16);
+    --aurora-3: rgba(236, 72, 153, 0.14);
   }
 }
 
@@ -31,4 +37,153 @@ body {
   font-family: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   margin: 0;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Aurora: three blurred radial blobs slowly drifting behind the content.
+   `position: fixed` keeps them anchored to the viewport so the effect is
+   stable as the user scrolls through the talks grid. */
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.aurora::before,
+.aurora::after,
+.aurora > span {
+  content: '';
+  position: absolute;
+  width: 55vmax;
+  height: 55vmax;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.85;
+  will-change: transform;
+}
+
+.aurora::before {
+  top: -20vmax;
+  left: -15vmax;
+  background: radial-gradient(circle at center, var(--aurora-1), transparent 60%);
+  animation: aurora-drift-a 24s ease-in-out infinite alternate;
+}
+
+.aurora::after {
+  bottom: -25vmax;
+  right: -20vmax;
+  background: radial-gradient(circle at center, var(--aurora-2), transparent 60%);
+  animation: aurora-drift-b 30s ease-in-out infinite alternate;
+}
+
+.aurora > span {
+  top: 30%;
+  left: 40%;
+  width: 40vmax;
+  height: 40vmax;
+  background: radial-gradient(circle at center, var(--aurora-3), transparent 60%);
+  animation: aurora-drift-c 36s ease-in-out infinite alternate;
+}
+
+@keyframes aurora-drift-a {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(10vw, 8vh, 0) scale(1.15); }
+}
+
+@keyframes aurora-drift-b {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-8vw, -10vh, 0) scale(1.1); }
+}
+
+@keyframes aurora-drift-c {
+  from { transform: translate3d(-10vw, -5vh, 0) scale(0.9); }
+  to { transform: translate3d(12vw, 8vh, 0) scale(1.2); }
+}
+
+/* Subtle hue shift on the title — slow enough to be felt, not noticed. */
+.hero-title {
+  background: linear-gradient(
+    90deg,
+    var(--fg) 0%,
+    color-mix(in oklch, var(--fg) 70%, hsl(220 90% 55%)) 35%,
+    color-mix(in oklch, var(--fg) 70%, hsl(280 90% 60%)) 65%,
+    var(--fg) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: hero-shimmer 12s ease-in-out infinite;
+}
+
+@keyframes hero-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Pulsing "live" dot next to the subtitle. */
+.live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
+  animation: live-pulse 2s ease-out infinite;
+}
+
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+/* Staggered fade-up entrance for talk cards. `--i` is set inline per-card;
+   the modulo cap keeps later cards (revealed by infinite-scroll) from
+   inheriting a huge delay. */
+.card-enter {
+  animation: card-in 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Card hover glow — colored halo derived from the card's gradient accent.
+   The card sets `--glow` inline; we read it here to drive the shadow. */
+.talk-card {
+  position: relative;
+  transition:
+    transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 300ms ease,
+    border-color 300ms ease;
+}
+
+.talk-card:hover {
+  border-color: color-mix(in oklch, var(--glow, var(--fg)) 60%, var(--border));
+  box-shadow:
+    0 10px 30px -10px color-mix(in oklch, var(--glow, #000) 40%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--glow, var(--fg)) 25%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora::before,
+  .aurora::after,
+  .aurora > span,
+  .hero-title,
+  .live-dot,
+  .card-enter {
+    animation: none !important;
+  }
 }
