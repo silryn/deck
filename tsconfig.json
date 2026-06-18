@@ -14,12 +14,15 @@
     ],
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true
   },
   "include": [
     "**/packages/**/*.ts",
     "**/packages/**/*.vue",
-    "**/packages/**/*.mts"
+    "**/packages/**/*.mts",
+    "site/**/*.ts",
+    "site/**/*.vue"
   ],
   "exclude": [
     "**/*.md"
