@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import type { Talk } from '../talks.config'
 import { talks } from '../talks.config'
 
 declare const __BUILD_INFO__: {
@@ -62,9 +63,13 @@ function fmtDate(date: string) {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-function gradientFor(slug: string) {
+// Talks that share a first tag share an accent — so a series of "debate"
+// talks all look like one family. Falls back to the slug when no tags are set,
+// which keeps the gradient stable per-card.
+function gradientFor(talk: Talk) {
+  const key = talk.tags?.[0] ?? talk.slug
   let hash = 0
-  for (let i = 0; i < slug.length; i++) hash = (hash * 31 + slug.charCodeAt(i)) >>> 0
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0
   const h1 = hash % 360
   const h2 = (h1 + 60) % 360
   return `linear-gradient(135deg, hsl(${h1} 70% 60%) 0%, hsl(${h2} 70% 45%) 100%)`
@@ -115,7 +120,7 @@ function gradientFor(slug: string) {
       >
         <div
           class="relative aspect-video overflow-hidden"
-          :style="{ background: gradientFor(talk.slug) }"
+          :style="{ background: gradientFor(talk) }"
         >
           <img
             v-if="talk.cover"
