@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 
 import type { Talk } from '../talks.config'
 import { talks } from '../talks.config'
@@ -74,6 +74,49 @@ function gradientFor(talk: Talk) {
   const h2 = (h1 + 60) % 360
   return `linear-gradient(135deg, hsl(${h1} 70% 60%) 0%, hsl(${h2} 70% 45%) 100%)`
 }
+
+// Mount the live first-slide iframe only for cards within (or near) the
+// viewport. Without this every card spins up a full Slidev SPA on page load
+// and keeps it running — fine for two talks, expensive once there are ten.
+// `rootMargin: 200px` pre-loads just-off-screen cards so scrolling stays
+// smooth; cards that leave the viewport unmount and free their runtime.
+const visible = ref(new Set<string>())
+const observer = typeof window !== 'undefined' && 'IntersectionObserver' in window
+  ? new IntersectionObserver(
+      (entries) => {
+        let changed = false
+        for (const e of entries) {
+          const slug = (e.target as HTMLElement).dataset.slug
+          if (!slug) continue
+          if (e.isIntersecting) {
+            if (!visible.value.has(slug)) {
+              visible.value.add(slug)
+              changed = true
+            }
+          }
+          else if (visible.value.delete(slug)) {
+            changed = true
+          }
+        }
+        if (changed) visible.value = new Set(visible.value)
+      },
+      { rootMargin: '200px' },
+    )
+  : null
+
+function observeCard(el: Element | null, slug: string) {
+  if (!observer) {
+    // No-IO fallback: act as if every card is visible (matches old behavior).
+    if (!visible.value.has(slug)) {
+      visible.value.add(slug)
+      visible.value = new Set(visible.value)
+    }
+    return
+  }
+  if (el) observer.observe(el)
+}
+
+onUnmounted(() => observer?.disconnect())
 </script>
 
 <template>
@@ -115,6 +158,8 @@ function gradientFor(talk: Talk) {
       <li
         v-for="talk in filtered"
         :key="talk.slug"
+        :ref="(el) => observeCard(el as Element | null, talk.slug)"
+        :data-slug="talk.slug"
         class="group cursor-pointer overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] transition hover:-translate-y-1 hover:shadow-xl"
         @click="open(talk.slug)"
       >
@@ -130,7 +175,7 @@ function gradientFor(talk: Talk) {
             class="h-full w-full object-cover transition duration-500 group-hover:scale-105"
           >
           <iframe
-            v-else
+            v-else-if="visible.has(talk.slug)"
             :src="`/${talk.slug}/`"
             :title="`${talk.title} — first slide`"
             loading="lazy"
