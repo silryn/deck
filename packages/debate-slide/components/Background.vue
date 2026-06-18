@@ -2,8 +2,21 @@
 import { useNav } from '@slidev/client'
 import seedrandom from 'seedrandom'
 import { computed, ref, watch } from 'vue'
+import { useParams } from '../composables/useParams'
 
 const { currentSlideRoute } = useNav()
+const params = useParams()
+
+// Hash the motion (debate topic) into a stable number, then derive both the
+// hue rotation and the polygon-layout seed from it. Different motions get
+// visually different backgrounds; the same motion is reproducible across
+// reloads and audience devices.
+const motionHash = computed(() => {
+  const s = params.value.motion
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return h
+})
 
 export type Range = [number, number]
 
@@ -23,11 +36,18 @@ export type Distribution =
 const formatter = computed(() => (currentSlideRoute.value.meta?.slide as any)?.frontmatter || {})
 const distribution = computed(() => (formatter.value.glow || 'full') as Distribution)
 const opacity = computed<number>(() => +(formatter.value.glowOpacity ?? 0.4))
-const hue = computed<number>(() => +(formatter.value.glowHue || 0))
-const seed = computed<string>(() => (formatter.value.glowSeed === 'false' || formatter.value.glowSeed === false)
-  ? Date.now().toString()
-  : formatter.value.glowSeed || 'default',
-)
+// Motion drives the base hue; frontmatter `glowHue` is layered on as a
+// per-slide offset (so individual slides can still tilt away from the base).
+const hue = computed<number>(() => (motionHash.value % 360) + (+(formatter.value.glowHue || 0)))
+// Motion is the base seed; frontmatter `glowSeed` (if set) is folded in,
+// so a slide can opt into its own layout while still reflecting the motion.
+// `glowSeed: false` keeps the "regenerate every render" escape hatch.
+const seed = computed<string>(() => {
+  const fm = formatter.value.glowSeed
+  if (fm === 'false' || fm === false) return Date.now().toString()
+  const base = String(motionHash.value)
+  return fm ? `${base}-${fm}` : base
+})
 const theme = computed(() => (formatter.value.theme || 'dark') as 'light' | 'dark')
 const overflow = 0.3
 const disturb = 0.3
