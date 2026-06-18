@@ -25,6 +25,8 @@
     "site/**/*.vue"
   ],
   "exclude": [
-    "**/*.md"
+    "**/*.md",
+    "**/node_modules/**",
+    "**/dist/**"
   ]
 }

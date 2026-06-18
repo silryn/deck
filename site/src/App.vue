@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 
 import type { Talk } from '../talks.config'
 import { talks } from '../talks.config'
@@ -116,7 +116,49 @@ function observeCard(el: Element | null, slug: string) {
   if (el) observer.observe(el)
 }
 
-onUnmounted(() => observer?.disconnect())
+// Infinite scroll: render `visibleCount` cards at a time and reveal a new
+// batch whenever the sentinel below the grid scrolls into view. Filter
+// changes reset the window back to the first batch. The batch size is
+// tuned to fill roughly two viewport-heights of the 3-column grid on
+// desktop, so the user never sees the spinner-equivalent (empty space).
+const BATCH_SIZE = 12
+const visibleCount = ref(BATCH_SIZE)
+
+const displayed = computed(() => filtered.value.slice(0, visibleCount.value))
+const hasMore = computed(() => visibleCount.value < filtered.value.length)
+
+watch(activeTag, () => {
+  visibleCount.value = BATCH_SIZE
+})
+
+const sentinel = ref<HTMLElement | null>(null)
+const sentinelObserver = typeof window !== 'undefined' && 'IntersectionObserver' in window
+  ? new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting && hasMore.value) {
+            visibleCount.value = Math.min(
+              visibleCount.value + BATCH_SIZE,
+              filtered.value.length,
+            )
+          }
+        }
+      },
+      // Wider margin than the card observer so the next batch is mounting
+      // before the user reaches the bottom of the current one.
+      { rootMargin: '400px' },
+    )
+  : null
+
+watch(sentinel, (el, prev) => {
+  if (prev) sentinelObserver?.unobserve(prev)
+  if (el) sentinelObserver?.observe(el)
+})
+
+onUnmounted(() => {
+  observer?.disconnect()
+  sentinelObserver?.disconnect()
+})
 </script>
 
 <template>
@@ -156,7 +198,7 @@ onUnmounted(() => observer?.disconnect())
 
     <ul class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
       <li
-        v-for="talk in filtered"
+        v-for="talk in displayed"
         :key="talk.slug"
         :ref="(el) => observeCard(el as Element | null, talk.slug)"
         :data-slug="talk.slug"
@@ -222,6 +264,15 @@ onUnmounted(() => observer?.disconnect())
         </div>
       </li>
     </ul>
+
+    <div
+      v-if="hasMore"
+      ref="sentinel"
+      class="mt-10 text-center text-xs text-[var(--muted)]"
+      aria-live="polite"
+    >
+      Loading more… ({{ displayed.length }} / {{ filtered.length }})
+    </div>
 
     <p
       v-if="!filtered.length"
