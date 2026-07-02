@@ -85,11 +85,13 @@ function talkRouter(): Plugin {
 
   return {
     name: 'deck-talk-router',
-    // Skip in dev — the spawner+proxy plugin owns /<slug>/* there.
+    // Preview only: in dev the spawner+proxy plugin owns /<slug>/*, and
+    // `vite build` never creates a server, so a middleware there is dead code.
     apply(_config, env) {
-      return env.command === 'build' || !!env.isPreview
+      return !!env.isPreview
     },
-    configureServer(server) {
+    // Not `configureServer` — the preview server only invokes this hook.
+    configurePreviewServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = (req.url || '').split('?')[0]
         const m = url.match(/^\/([^/]+)(?:\/(.*))?$/)

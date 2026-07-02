@@ -11,7 +11,6 @@ drawings:
   persist: false
 mdc: true
 clicks: 0
-preload: false
 glowSeed: 233
 routerMode: hash
 ---
@@ -104,23 +103,11 @@ layout: center
 
 <script setup>
 import { ref } from 'vue'
+import { useDebateSwitch } from './composables/useDebateSwitch'
+
 const proTimer = ref(null)
 const conTimer = ref(null)
-
-function switchDebater() {
-  if (proTimer.value?.isRunning) {
-    proTimer.value?.stop()
-    conTimer.value?.start()
-  } else if (conTimer.value?.isRunning) {
-    conTimer.value?.stop()
-    proTimer.value?.start()
-  }
-}
-
-function pauseDebate() {
-  proTimer.value?.stop()
-  conTimer.value?.stop()
-}
+const { switchSides, pauseBoth, anyRunning } = useDebateSwitch(proTimer, conTimer)
 </script>
 
 # 💬 环节二：对辩
@@ -132,15 +119,16 @@ function pauseDebate() {
 
 <div class="mt-6 flex items-center justify-center gap-3">
   <button 
-    @click="switchDebater"
+    @click="switchSides"
     class="px-6 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition flex items-center gap-2"
   >
     <div class="i-carbon-arrows-horizontal text-xl"></div>
     <span>切换</span>
   </button>
   <button 
-    @click="pauseDebate"
-    class="px-6 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition flex items-center gap-2"
+    @click="pauseBoth"
+    :disabled="!anyRunning"
+    class="px-6 py-2 rounded-lg bg-white/10 enabled:hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2"
   >
     <div class="i-carbon-pause text-xl"></div>
     <span>暂停</span>
@@ -164,23 +152,11 @@ layout: center
 
 <script setup>
 import { ref } from 'vue'
+import { useDebateSwitch } from './composables/useDebateSwitch'
+
 const proDebateTimer = ref(null)
 const conDebateTimer = ref(null)
-
-function switchSide() {
-  if (proDebateTimer.value?.isRunning) {
-    proDebateTimer.value?.stop()
-    conDebateTimer.value?.start()
-  } else if (conDebateTimer.value?.isRunning) {
-    conDebateTimer.value?.stop()
-    proDebateTimer.value?.start()
-  }
-}
-
-function pauseAll() {
-  proDebateTimer.value?.stop()
-  conDebateTimer.value?.stop()
-}
+const { switchSides, pauseBoth, anyRunning } = useDebateSwitch(proDebateTimer, conDebateTimer)
 </script>
 
 # ⚡ 环节四：自由辩论
@@ -192,15 +168,16 @@ function pauseAll() {
 
 <div class="mt-6 flex items-center justify-center gap-3">
   <button 
-    @click="switchSide"
+    @click="switchSides"
     class="px-6 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition flex items-center gap-2"
   >
     <div class="i-carbon-arrows-horizontal text-xl"></div>
     <span>切换</span>
   </button>
   <button 
-    @click="pauseAll"
-    class="px-6 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition flex items-center gap-2"
+    @click="pauseBoth"
+    :disabled="!anyRunning"
+    class="px-6 py-2 rounded-lg bg-white/10 enabled:hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2"
   >
     <div class="i-carbon-pause text-xl"></div>
     <span>暂停</span>

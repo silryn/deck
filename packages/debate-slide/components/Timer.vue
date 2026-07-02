@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { createSyncState } from '@slidev/client'
+import { useTimerState } from '../composables/useTimerState'
 
 const props = defineProps<{
   duration: number
@@ -14,21 +14,9 @@ const emit = defineEmits<{
   stop: []
 }>()
 
-// Timer state is wall-clock based, not tick-mutated. We sync:
-//   - endsAt: absolute ms timestamp when timer hits 0 (only valid while running)
-//   - pausedRemaining: seconds left at the moment we paused
-//   - isRunning, hasWarned
-// Every window derives the visible countdown from `endsAt - Date.now()`, so
-// any number of windows can be open without compounding the tick rate, and
-// the presenter/audience distinction goes away entirely.
-const initial = {
-  isRunning: false,
-  endsAt: 0,
-  pausedRemaining: props.duration,
-  hasWarned: false,
-}
-const { state: syncState, init: initSync } = createSyncState({ ...initial }, { ...initial })
-initSync(`timer-${props.label}`)
+// Wall-clock, persisted, shared per label across instances and windows —
+// see useTimerState for the design notes.
+const syncState = useTimerState(props.label, props.duration * 1000)
 
 const now = ref(Date.now())
 let tickId: number | null = null
@@ -49,9 +37,8 @@ function startTick() {
 }
 
 const timeLeft = computed(() => {
-  if (syncState.isRunning)
-    return Math.max(0, Math.ceil((syncState.endsAt - now.value) / 1000))
-  return syncState.pausedRemaining
+  const remainingMs = syncState.isRunning ? syncState.endsAt - now.value : syncState.pausedRemainingMs
+  return Math.max(0, Math.ceil(remainingMs / 1000))
 })
 
 watch(
@@ -66,23 +53,25 @@ watch(
 // Drive the warning + auto-stop off the derived `timeLeft`, not the interval.
 // Both fire on every window, but state mutations are idempotent and the
 // `hasWarned` flag in sync state keeps the 30s beep from playing twice.
-watch(timeLeft, (v, prev) => {
+watch(timeLeft, (v) => {
   if (!syncState.isRunning) return
   if (v <= 30 && v > 0 && !syncState.hasWarned) {
     syncState.hasWarned = true
     playWarningSound()
   }
-  if (v === 0 && prev !== 0) {
-    syncState.isRunning = false
-    syncState.pausedRemaining = 0
-    emit('stop')
-    playWarningSound()
-    setTimeout(() => playWarningSound(), 300)
-  }
+  if (v === 0)
+    finish()
 })
 
 onMounted(() => {
-  if (props.autoStart && !syncState.isRunning && syncState.pausedRemaining > 0)
+  // A running timer that expired while nothing was watching (page reload,
+  // presenter-view remount) can't be finalized by the watcher above — the
+  // derived timeLeft never *changes* from 0. Finalize it here, silently.
+  if (syncState.isRunning && syncState.endsAt <= Date.now()) {
+    syncState.isRunning = false
+    syncState.pausedRemainingMs = 0
+  }
+  if (props.autoStart && !syncState.isRunning && syncState.pausedRemainingMs > 0)
     start()
 })
 
@@ -95,7 +84,13 @@ const isWarning = computed(() => timeLeft.value <= 30 && timeLeft.value > 0)
 const isRunning = computed(() => syncState.isRunning)
 
 const colorClass = computed(() => {
-  if (isWarning.value) return 'text-yellow-400 border-yellow-400 animate-pulse'
+  if (isWarning.value) {
+    // Yellow marks "in the warning zone"; the pulse means "and counting" —
+    // a paused timer holds the color but stops flashing.
+    return isRunning.value
+      ? 'text-yellow-400 border-yellow-400 animate-pulse'
+      : 'text-yellow-400 border-yellow-400'
+  }
   if (props.color === 'green') return 'text-green-400 border-green-400'
   if (props.color === 'red') return 'text-red-400 border-red-400'
   return 'text-blue-400 border-blue-400'
@@ -107,35 +102,54 @@ function playWarningSound() {
 }
 
 function start() {
-  if (syncState.isRunning || syncState.pausedRemaining <= 0) return
-  syncState.endsAt = Date.now() + syncState.pausedRemaining * 1000
+  if (syncState.isRunning || syncState.pausedRemainingMs <= 0) return
+  syncState.endsAt = Date.now() + syncState.pausedRemainingMs
   syncState.isRunning = true
+  syncState.savedAt = Date.now()
   emit('start')
 }
 
 function stop() {
   if (!syncState.isRunning) return
-  syncState.pausedRemaining = Math.max(0, Math.ceil((syncState.endsAt - Date.now()) / 1000))
+  const remainingMs = Math.max(0, syncState.endsAt - Date.now())
+  if (remainingMs === 0) {
+    // Pausing in the instant after expiry is the end of time, not a pause.
+    finish()
+    return
+  }
+  syncState.pausedRemainingMs = remainingMs
   syncState.isRunning = false
+  syncState.savedAt = Date.now()
   emit('stop')
+}
+
+function finish() {
+  syncState.isRunning = false
+  syncState.pausedRemainingMs = 0
+  syncState.savedAt = Date.now()
+  emit('stop')
+  playWarningSound()
+  setTimeout(() => playWarningSound(), 300)
 }
 
 function reset() {
   syncState.isRunning = false
   syncState.endsAt = 0
-  syncState.pausedRemaining = props.duration
+  syncState.pausedRemainingMs = props.duration * 1000
   syncState.hasWarned = false
+  syncState.savedAt = Date.now()
   emit('stop')
 }
 
 watch(() => props.duration, (newDuration) => {
   syncState.isRunning = false
   syncState.endsAt = 0
-  syncState.pausedRemaining = newDuration
+  syncState.pausedRemainingMs = newDuration * 1000
   syncState.hasWarned = false
+  syncState.savedAt = Date.now()
 })
 
-defineExpose({ start, stop, reset, isRunning })
+defineExpose({ start, stop, reset, isRunning, timeLeft })
 </script>
 
 <template>
@@ -159,7 +173,7 @@ defineExpose({ start, stop, reset, isRunning })
           stroke="currentColor"
           stroke-width="6"
           fill="none"
-          class="transition-all duration-1000"
+          :class="isRunning ? 'transition-all duration-1000' : ''"
           :stroke-dasharray="`${2 * Math.PI * 88}`"
           :stroke-dashoffset="`${2 * Math.PI * 88 * (1 - progress / 100)}`"
         />
@@ -171,14 +185,14 @@ defineExpose({ start, stop, reset, isRunning })
     <div class="flex gap-3">
       <button
         @click="start"
-        class="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition"
-        :disabled="isRunning"
+        class="p-2 rounded-lg bg-white/10 enabled:hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed transition"
+        :disabled="isRunning || timeLeft === 0"
       >
         <div class="i-carbon-play text-xl"></div>
       </button>
       <button
         @click="stop"
-        class="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition"
+        class="p-2 rounded-lg bg-white/10 enabled:hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed transition"
         :disabled="!isRunning"
       >
         <div class="i-carbon-pause text-xl"></div>
