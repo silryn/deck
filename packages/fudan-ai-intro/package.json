@@ -1,0 +1,11 @@
+{
+  "name": "fudan-ai-intro",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "slidev --open --remote",
+    "build": "slidev build",
+    "build-base": "slidev build --out ../../dist/fudan-ai-intro --base /fudan-ai-intro/",
+    "export": "slidev export --with-clicks --per-slide --wait-until none"
+  }
+}

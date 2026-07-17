@@ -21,6 +21,14 @@ export interface Talk {
 
 export const talks: Talk[] = [
   {
+    slug: 'fudan-ai-intro',
+    title: '2026复旦大学计算机工作站 · AI引导课程',
+    date: '2026-07-17',
+    venue: '复旦大学计算机工作站',
+    description: 'AI 兴起、Vibe Coding、主流工具与 AI 边界——面向新生的 AI 编程引导课',
+    tags: ['ai', 'vibe-coding', 'fudan'],
+  },
+  {
     slug: 'debate-slide',
     title: '辩论赛决赛',
     date: '2025-12-17',
