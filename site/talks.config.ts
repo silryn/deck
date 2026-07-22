@@ -21,6 +21,14 @@ export interface Talk {
 
 export const talks: Talk[] = [
   {
+    slug: 'ai-finance',
+    title: 'AI 赋能金融从业者',
+    date: '2026-07-20',
+    venue: '金融科技应用',
+    description: '研究、建模、合规、量化——大模型正在重写金融从业者的工作流',
+    tags: ['ai', 'finance', '金融'],
+  },
+  {
     slug: 'fudan-ai-intro',
     title: '2026复旦大学计算机工作站 · AI引导课程',
     date: '2026-07-17',

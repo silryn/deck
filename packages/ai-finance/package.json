@@ -1,0 +1,11 @@
+{
+  "name": "ai-finance",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "slidev --open --remote",
+    "build": "slidev build",
+    "build-base": "slidev build --out ../../dist/ai-finance --base /ai-finance/",
+    "export": "slidev export --with-clicks --per-slide --wait-until none"
+  }
+}
