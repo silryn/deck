@@ -1,0 +1,44 @@
+/* Kill the Slidev "goto" dialog (the autocomplete-list of all slide titles). */
+#slidev-goto-dialog {
+  display: none !important;
+}
+
+/* Always-light board: let the animated glow background show through the slide
+   surface instead of the default opaque white, whatever the color scheme. */
+#slide-content,
+.slidev-layout {
+  background: transparent !important;
+  color: #1e293b;
+}
+
+.slidev-vclick-target {
+  transition:
+    opacity 500ms ease,
+    filter 200ms ease,
+    color 300ms ease;
+}
+
+.slidev-vclick-hidden {
+  opacity: 0;
+  pointer-events: none;
+  filter: blur(3px);
+}
+
+.fade-out-leave-active {
+  transition:
+    opacity calc(var(--slidev-transition-duration) * 0.6) ease-out,
+    filter 200ms ease;
+}
+
+.fade-out-enter-active {
+  transition:
+    opacity calc(var(--slidev-transition-duration) * 0.8) ease-in,
+    filter 200ms ease;
+  transition-delay: calc(var(--slidev-transition-duration) * 0.6);
+}
+
+.fade-out-enter-from,
+.fade-out-leave-to {
+  opacity: 0;
+  filter: blur(5px);
+}

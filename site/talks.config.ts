@@ -21,6 +21,15 @@ export interface Talk {
 
 export const talks: Talk[] = [
   {
+    slug: 'wifi-slide',
+    title: '现场网络连接',
+    date: '2026-07-23',
+    venue: '通用模板',
+    description:
+      '浅色投影友好的入网看板:多组 SSID/密码 + WiFi 二维码,支持自定义主副标题,设置写入 URL。',
+    tags: ['wifi', 'template', 'qr'],
+  },
+  {
     slug: 'ai-finance',
     title: 'AI 赋能金融从业者',
     date: '2026-07-20',
