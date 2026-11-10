@@ -1,5 +1,6 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
+import http from 'node:http'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -217,6 +218,66 @@ function slidevDevSpawner(ports: Map<string, number>): Plugin {
   }
 }
 
+// Slidev's presenter page loads notes from root-level endpoints such as
+// `/__slidev/slides/1.json` and `/@server-reactive/nav`. Those paths do not
+// include the talk's base, so the `/<slug>/*` proxy above never sees them.
+// Route them to the right slidev child by looking at the Referer header.
+function slidevRootApiRouter(ports: Map<string, number>): Plugin {
+  const slugs = new Set(ports.keys())
+
+  function slugFromReferer(referer: string | undefined) {
+    if (!referer)
+      return undefined
+    try {
+      const [first] = new URL(referer).pathname.split('/').filter(Boolean)
+      return first && slugs.has(first) ? first : undefined
+    }
+    catch {
+      return undefined
+    }
+  }
+
+  return {
+    name: 'deck-slidev-root-api-router',
+    apply: 'serve',
+    configureServer(server) {
+      if (ports.size === 0)
+        return
+
+      server.middlewares.use((req, res, next) => {
+        const pathname = (req.url || '').split('?')[0]
+        const isSlidevRootApi = pathname.startsWith('/__slidev/') || pathname.startsWith('/@server-reactive/')
+        if (!isSlidevRootApi)
+          return next()
+
+        const slug = slugFromReferer(req.headers.referer)
+        const port = slug ? ports.get(slug) : undefined
+        if (!port)
+          return next()
+
+        // Forward the request unchanged: slidev serves these endpoints at its
+        // root even when the deck itself is mounted under /<slug>/.
+        const headers = { ...req.headers, host: `localhost:${port}`, origin: `http://localhost:${port}` }
+        delete headers.connection
+
+        const proxyReq = http.request(
+          { hostname: 'localhost', port, path: req.url, method: req.method, headers },
+          (proxyRes) => {
+            res.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers)
+            proxyRes.pipe(res)
+          },
+        )
+        proxyReq.on('error', (err) => {
+          if (!res.headersSent)
+            res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' })
+          res.end(`slidev api proxy error: ${err.message}`)
+        })
+        req.pipe(proxyReq)
+      })
+    },
+  }
+}
+
 export default defineConfig(async ({ command, isPreview }) => {
   const slugs = knownSlugs()
   const isDev = command === 'serve' && !isPreview
@@ -248,6 +309,7 @@ export default defineConfig(async ({ command, isPreview }) => {
       unocss({ configFile: path.resolve(here, 'uno.config.ts') }),
       talkRouter(),
       slidevDevSpawner(ports),
+      slidevRootApiRouter(ports),
     ],
     define: {
       __BUILD_INFO__: JSON.stringify(buildInfo),
