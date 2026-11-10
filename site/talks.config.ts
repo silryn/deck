@@ -21,6 +21,15 @@ export interface Talk {
 
 export const talks: Talk[] = [
   {
+    slug: 'cve-landscape',
+    title: 'The CVE Landscape',
+    date: '2026-11-10',
+    venue: 'English Presentation',
+    description:
+      'Recent critical CVEs and the principles behind them — memory safety, injection, auth bypass, supply chain, and a defense playbook.',
+    tags: ['security', 'cve', 'english'],
+  },
+  {
     slug: 'wifi-slide',
     title: '现场网络连接',
     date: '2026-07-23',
